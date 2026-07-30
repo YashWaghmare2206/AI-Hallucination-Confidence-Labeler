@@ -1,0 +1,25 @@
+# Core ML / scoring
+transformers>=4.41.0
+torch>=2.2.0
+evaluate>=0.4.2
+sentence-transformers>=3.0.0
+sacrebleu>=2.4.0        # transitive dep some evaluate metrics expect
+
+# LLM API clients
+groq>=0.9.0
+google-generativeai>=0.7.0
+
+# LLM-as-judge
+deepeval>=1.0.0
+
+# Frontend
+streamlit>=1.36.0
+
+# Utilities
+python-dotenv>=1.0.1
+numpy>=1.26.0
+scikit-learn>=1.5.0     # softmax/metrics helpers if needed
+
+# Testing
+pytest>=8.2.0
+pytest-mock>=3.14.0
