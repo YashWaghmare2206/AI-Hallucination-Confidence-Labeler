@@ -11,6 +11,8 @@ several seconds per call, so it's a secondary/slower verification layer,
 not part of the main fast path.
 """
 
+import signal as _signal_module
+from contextlib import contextmanager
 from dataclasses import dataclass
 
 DEFAULT_THRESHOLD = 0.5  # pass/fail threshold on contradicted-context ratio
@@ -21,19 +23,45 @@ class DeepEvalJudgeError(Exception):
     pass
 
 
+@contextmanager
+def _signal_guard():
+    """
+    DeepEval's tracing module registers a SIGINT handler at import time
+    (signal.signal(...)), which raises ValueError when the importing thread
+    isn't the main thread — as is the case inside Streamlit's script runner.
+    This context manager temporarily no-ops signal.signal for the duration
+    of any deepeval import, in any function, so that registration attempt
+    is silently skipped instead of crashing the app.
+    """
+    original_signal = _signal_module.signal
+
+    def _safe_signal(*args, **kwargs):
+        try:
+            return original_signal(*args, **kwargs)
+        except ValueError:
+            return None  # not in main thread — skip handler registration
+
+    _signal_module.signal = _safe_signal
+    try:
+        yield
+    finally:
+        _signal_module.signal = original_signal
+
+
 def _get_metric(threshold: float = DEFAULT_THRESHOLD):
     """
     Lazily import and construct the DeepEval HallucinationMetric.
     Import is deferred so the rest of the app isn't blocked if deepeval
     isn't installed / is slow to import.
     """
-    try:
-        from deepeval.metrics import HallucinationMetric
-    except ImportError as e:
-        raise DeepEvalJudgeError(
-            "deepeval is not installed or failed to import. "
-            "Run `pip install deepeval` to enable this verification layer."
-        ) from e
+    with _signal_guard():
+        try:
+            from deepeval.metrics import HallucinationMetric
+        except ImportError as e:
+            raise DeepEvalJudgeError(
+                "deepeval is not installed or failed to import. "
+                "Run `pip install deepeval` to enable this verification layer."
+            ) from e
 
     return HallucinationMetric(threshold=threshold)
 
@@ -60,13 +88,14 @@ def run_judge(question: str, generated_answer: str, context: str,
     Raises:
         DeepEvalJudgeError: if deepeval isn't installed or the metric call fails
     """
-    try:
-        from deepeval.test_case import LLMTestCase
-    except ImportError as e:
-        raise DeepEvalJudgeError(
-            "deepeval is not installed or failed to import. "
-            "Run `pip install deepeval` to enable this verification layer."
-        ) from e
+    with _signal_guard():
+        try:
+            from deepeval.test_case import LLMTestCase
+        except ImportError as e:
+            raise DeepEvalJudgeError(
+                "deepeval is not installed or failed to import. "
+                "Run `pip install deepeval` to enable this verification layer."
+            ) from e
 
     if not context or not context.strip():
         raise DeepEvalJudgeError(
