@@ -54,16 +54,27 @@ def _get_metric(threshold: float = DEFAULT_THRESHOLD):
     Import is deferred so the rest of the app isn't blocked if deepeval
     isn't installed / is slow to import.
     """
+    import os
+
     with _signal_guard():
         try:
             from deepeval.metrics import HallucinationMetric
+            from deepeval.models import GeminiModel
         except ImportError as e:
             raise DeepEvalJudgeError(
                 "deepeval is not installed or failed to import. "
                 "Run `pip install deepeval` to enable this verification layer."
             ) from e
 
-    return HallucinationMetric(threshold=threshold)
+    gemini_key = os.getenv("GEMINI_API_KEY")
+    if not gemini_key:
+        raise DeepEvalJudgeError(
+            "GEMINI_API_KEY is not set. DeepEval's judge model needs this "
+            "key (see .env.example) to run the secondary verification check."
+        )
+
+    judge_model = GeminiModel(model="gemini-2.5-flash", api_key=gemini_key, temperature=0)
+    return HallucinationMetric(threshold=threshold, model=judge_model)
 
 
 def run_judge(question: str, generated_answer: str, context: str,
@@ -144,6 +155,17 @@ def run_judge_safe(question: str, generated_answer: str, context: str,
             "reason": None,
             "threshold_used": threshold,
             "error": str(e),
+        }
+    except Exception as e:
+        # Catches anything DeepEval/its underlying judge model raises that we
+        # didn't explicitly wrap (e.g. missing OPENAI_API_KEY during judge
+        # model init). This layer must never crash the app.
+        return {
+            "score": None,
+            "passed": None,
+            "reason": None,
+            "threshold_used": threshold,
+            "error": f"DeepEval judge unavailable: {e}",
         }
 
 
