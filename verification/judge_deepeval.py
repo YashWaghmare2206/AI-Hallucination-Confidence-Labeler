@@ -13,7 +13,6 @@ not part of the main fast path.
 
 import signal as _signal_module
 from contextlib import contextmanager
-from dataclasses import dataclass
 
 DEFAULT_THRESHOLD = 0.5  # pass/fail threshold on contradicted-context ratio
 
@@ -73,7 +72,16 @@ def _get_metric(threshold: float = DEFAULT_THRESHOLD):
             "key (see .env.example) to run the secondary verification check."
         )
 
-    judge_model = GeminiModel(model="gemini-2.5-flash", api_key=gemini_key, temperature=0)
+    # Note: Gemini 3.x models (including gemini-3.5-flash-lite) have
+    # deprecated the temperature/top_p/top_k sampling params. Most SDK
+    # versions still accept temperature=0 without erroring (it's just
+    # ignored), but if a future deepeval/google-generativeai version starts
+    # rejecting it outright, fall back to constructing without it rather
+    # than crashing this verification layer.
+    try:
+        judge_model = GeminiModel(model="gemini-3.5-flash-lite", api_key=gemini_key, temperature=0)
+    except TypeError:
+        judge_model = GeminiModel(model="gemini-3.5-flash-lite", api_key=gemini_key)
     return HallucinationMetric(threshold=threshold, model=judge_model)
 
 

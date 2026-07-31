@@ -11,6 +11,8 @@ Wires together:
 into a single demo-ready Streamlit app.
 """
 
+import os
+
 import streamlit as st
 
 from core.perplexity import score as perplexity_score
@@ -71,6 +73,20 @@ if selected_label != "(none)":
 source_snippet = st.text_area("Source Snippet (optional)", value=default_source, height=120)
 question = st.text_input("Question", value=default_question)
 
+with st.expander("🧪 Testing tools (optional)"):
+    manual_answer_override = st.text_area(
+        "Force a specific answer instead of generating one",
+        value="",
+        placeholder="e.g. type a deliberately wrong answer here to stress-test the contradiction guard",
+        height=80,
+    )
+    st.caption(
+        "Leave blank to let the LLM generate the answer normally. "
+        "Fill this in to test how the pipeline scores a *specific* answer "
+        "(e.g. a deliberately incorrect one) without depending on the LLM "
+        "to hallucinate on its own."
+    )
+
 generate_clicked = st.button("🚀 Generate and Verify", type="primary")
 
 
@@ -89,18 +105,22 @@ if generate_clicked:
     # Step 1: Generate answer (Member 2)
     with st.spinner("Generating answer..."):
         try:
-            example = get_example_by_label(selected_label) if selected_label != "(none)" else None
-            if example and "answer_override" in example:
-                # Demo case with a pre-baked contradictory answer for reliable demoing
-                answer = example["answer_override"]
+            if manual_answer_override and manual_answer_override.strip():
+                # Testing tool: user forced a specific answer — skip the LLM entirely
+                answer = manual_answer_override.strip()
             else:
-                gen_result = generate_answer(
-                    question=question,
-                    source_snippet=source_snippet if has_source else None,
-                    provider=provider,
-                    api_key=api_key or None,
-                )
-                answer = gen_result["answer"]
+                example = get_example_by_label(selected_label) if selected_label != "(none)" else None
+                if example and "answer_override" in example:
+                    # Demo case with a pre-baked contradictory answer for reliable demoing
+                    answer = example["answer_override"]
+                else:
+                    gen_result = generate_answer(
+                        question=question,
+                        source_snippet=source_snippet if has_source else None,
+                        provider=provider,
+                        api_key=api_key or None,
+                    )
+                    answer = gen_result["answer"]
         except LLMClientError as e:
             st.error(f"LLM generation failed: {e}")
             st.stop()
@@ -142,13 +162,22 @@ if generate_clicked:
         entailment_threshold=entailment_threshold,
         contradiction_threshold=contradiction_threshold,
         semantic_entropy=semantic_entropy,
+        answer_text=answer,
     )
 
     # Step 6: Optional DeepEval judge on low-confidence hits (Member 2)
     deepeval_result = None
     if run_deepeval_toggle and has_source and tag_result["tag"] != "Certain":
-        with st.spinner("Running deeper DeepEval verification..."):
-            deepeval_result = run_judge_safe(question, answer, source_snippet)
+        if not os.getenv("GEMINI_API_KEY"):
+            st.info(
+                "⏭️ Skipping DeepEval verification — no GEMINI_API_KEY found. "
+                "DeepEval's judge model needs this key (see .env.example) to run "
+                "the secondary check. Add one to your .env to enable this layer, "
+                "or ignore this and rely on the perplexity/NLI results above."
+            )
+        else:
+            with st.spinner("Running deeper DeepEval verification..."):
+                deepeval_result = run_judge_safe(question, answer, source_snippet)
 
     # --- Output section ---
     st.markdown("### 🏷️ Reliability Tag")
@@ -157,6 +186,8 @@ if generate_clicked:
         st.success(f"**{tag}**")
     elif tag == "Needs Verification":
         st.warning(f"**{tag}**")
+    elif tag == "Insufficient Information":
+        st.info(f"**{tag}**")  # neutral — not a confidence judgment, just "couldn't check"
     else:
         st.error(f"**{tag}**")
 

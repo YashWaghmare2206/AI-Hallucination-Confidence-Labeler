@@ -46,19 +46,43 @@ def compute_perplexity(question: str, answer: str,
     Compute sliding-window perplexity of `answer`, conditioned on `question`.
 
     Strategy:
-    - Concatenate question + answer as context.
+    - Tokenize question and answer separately, then concatenate, so we know
+      exactly where the answer begins in the token sequence.
+    - Only the ANSWER tokens contribute to the loss (question tokens are
+      masked out with label = -100). The question is still present as
+      conditioning context for the model, but its own grammaticality/
+      punctuation no longer affects the score — e.g. dropping a "?" from
+      the question no longer changes the perplexity of an unchanged answer.
     - Slide a window of size `max_context` across the sequence with `stride`
       overlap, only counting loss on the "new" (non-overlapping) tokens
       after the first window, so scores aren't inflated by naive chunking.
     """
     model, tokenizer = _load_model()
 
-    full_text = f"{question.strip()}\n{answer.strip()}"
-    encodings = tokenizer(full_text, return_tensors="pt")
-    input_ids = encodings.input_ids
+    question_text = question.strip()
+    answer_text = answer.strip()
+
+    # IMPORTANT: tokenize the question+answer as ONE joined string (not
+    # separately then concatenated). GPT-2's BPE tokenizer encodes a
+    # leading-space token (e.g. " William") differently from the same word
+    # with no leading space ("William"). Tokenizing the answer in isolation
+    # loses that natural space-prefixed encoding at the boundary, which
+    # makes the model see an artificially rare/unnatural token sequence
+    # right where the answer begins — spiking perplexity for reasons that
+    # have nothing to do with actual model uncertainty. Joint tokenization
+    # avoids that artifact; we still need to know exactly how many tokens
+    # belong to the question so we can mask them from the loss, so we
+    # tokenize the question prefix alone (this alignment is reliable for
+    # GPT-2 since BPE merges essentially never cross a "\n" boundary).
+    question_prefix = f"{question_text}\n"
+    full_text = f"{question_text}\n{answer_text}"
+
+    input_ids = tokenizer(full_text, return_tensors="pt").input_ids
+    q_len = tokenizer(question_prefix, return_tensors="pt").input_ids.size(1)
     seq_len = input_ids.size(1)
 
     nlls = []
+    total_valid_tokens = 0
     prev_end = 0
 
     for begin in range(0, seq_len, stride):
@@ -71,18 +95,39 @@ def compute_perplexity(question: str, answer: str,
         # Mask out the overlapping portion so it isn't double-counted
         target_ids[:, :-trg_len] = -100
 
+        # Mask out any token that falls within the question span (absolute
+        # position < q_len), so only answer tokens ever contribute to loss.
+        abs_positions = torch.arange(begin, end)
+        question_mask = abs_positions < q_len
+        target_ids[:, question_mask] = -100
+
+        num_valid = int((target_ids != -100).sum().item())
+        prev_end = end
+
+        if num_valid == 0:
+            # This window is entirely question tokens (or fully overlapped) —
+            # nothing new to score, skip it.
+            if end == seq_len:
+                break
+            continue
+
         with torch.no_grad():
             outputs = model(window_ids, labels=target_ids)
-            neg_log_likelihood = outputs.loss * trg_len
+            neg_log_likelihood = outputs.loss * num_valid
 
         nlls.append(neg_log_likelihood)
-        prev_end = end
+        total_valid_tokens += num_valid
 
         if end == seq_len:
             break
 
+    if total_valid_tokens == 0:
+        # Degenerate case: empty answer. Return a neutral/high perplexity
+        # so it doesn't get treated as confidently low-uncertainty.
+        return float("inf")
+
     total_nll = torch.stack(nlls).sum()
-    avg_nll = total_nll / seq_len
+    avg_nll = total_nll / total_valid_tokens
     perplexity = torch.exp(avg_nll).item()
 
     return perplexity

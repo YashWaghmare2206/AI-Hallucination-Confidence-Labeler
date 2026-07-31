@@ -2,22 +2,60 @@
 logic_engine.py — Tri-State Decision Matrix + rationale generator (Member 1)
 
 Fuses Perplexity + NLI outputs into a final reliability tag:
-Certain | Needs Verification | Uncertain
+Certain | Needs Verification | Uncertain | Insufficient Information
 
 Implements the exact routing table from the design doc, including the two
 critical edge-case rules:
   1. Overconfident hallucination guard — contradiction overrides low perplexity.
   2. Missing evidence cap — no source ever caps at "Needs Verification".
+
+A fourth tag, "Insufficient Information", is used specifically when the
+model itself admits the source doesn't contain the answer. This is kept
+separate from Certain/Needs Verification/Uncertain on purpose: it isn't a
+confidence judgment about correctness at all (the model didn't get anything
+wrong), it's a statement that verification wasn't possible with the given
+source. Folding it into "Needs Verification" would misleadingly imply there
+might be an error to catch, and folding it into "Uncertain" would wrongly
+imply the model hallucinated.
 """
 
 # Tag constants
 CERTAIN = "Certain"
 NEEDS_VERIFICATION = "Needs Verification"
 UNCERTAIN = "Uncertain"
+INSUFFICIENT_INFO = "Insufficient Information"
 
 # Thresholds (defaults — live-adjustable via UI sliders in app.py)
 DEFAULT_ENTAILMENT_THRESHOLD = 0.85
 DEFAULT_CONTRADICTION_THRESHOLD = 0.50
+
+# Phrases that signal the model is admitting the source doesn't contain the
+# answer, rather than actually answering. NLI scores these as "entailed"
+# (they're true, non-contradicting statements about the source), but this
+# is a distinct outcome from Certain/Needs Verification/Uncertain — it means
+# verification wasn't possible, not that the answer is right, wrong, or
+# merely unconfirmed.
+_REFUSAL_PATTERNS = (
+    "does not mention", "doesn't mention",
+    "does not specify", "doesn't specify",
+    "does not contain", "doesn't contain",
+    "does not provide", "doesn't provide",
+    "does not state", "doesn't state",
+    "not mentioned in the source", "not specified in the source",
+    "not provided in the source", "not stated in the source",
+    "no information", "cannot determine", "cannot be determined",
+    "unable to determine", "the source does not",
+    "not available in the provided",
+)
+
+
+def _is_refusal(answer_text: str) -> bool:
+    """Detect if the answer is admitting the source lacks the information,
+    rather than actually answering the question."""
+    if not answer_text:
+        return False
+    lowered = answer_text.lower()
+    return any(pattern in lowered for pattern in _REFUSAL_PATTERNS)
 
 
 def _rationale(tag: str, reason_key: str) -> str:
@@ -31,6 +69,7 @@ def _rationale(tag: str, reason_key: str) -> str:
         "no_source_low": "No source was provided to verify against. The model was confident, but this caps at 'Needs Verification'.",
         "no_source_high": "No source was provided, and the model showed high uncertainty — likely hallucination.",
         "no_source_high_entropy": "No source was provided, and self-consistency checks show high semantic entropy across resampled answers — likely hallucination.",
+        "insufficient_info": "The source provided does not contain enough information to answer this question. This isn't a judgment that the answer is right or wrong — it simply couldn't be verified against the given source.",
     }
     return templates.get(reason_key, "No rationale template available.")
 
@@ -40,7 +79,8 @@ def generate_tag(nli_result: dict, perplexity_result: dict,
                  entailment_threshold: float = DEFAULT_ENTAILMENT_THRESHOLD,
                  contradiction_threshold: float = DEFAULT_CONTRADICTION_THRESHOLD,
                  semantic_entropy: float = None,
-                 entropy_threshold: float = 0.5) -> dict:
+                 entropy_threshold: float = 0.5,
+                 answer_text: str = None) -> dict:
     """
     Fuse NLI + perplexity into a final tag.
 
@@ -55,6 +95,11 @@ def generate_tag(nli_result: dict, perplexity_result: dict,
         semantic_entropy: optional float from SelfCheckGPT (Member 2),
                           only used in the no-source branch
         entropy_threshold: float cutoff for degrading no-source tag to Uncertain
+        answer_text: optional str — the actual generated answer text. When
+                     provided, checked for refusal/non-answer phrasing (e.g.
+                     "the source does not mention...") so an honest "I don't
+                     know" never gets mistakenly tagged Certain just because
+                     NLI sees it as non-contradicting.
 
     Returns:
         {
@@ -101,6 +146,17 @@ def generate_tag(nli_result: dict, perplexity_result: dict,
             tag = NEEDS_VERIFICATION
             reason_key = "no_source_low"
 
+        return {"tag": tag, "rationale": _rationale(tag, reason_key), "raw_scores": raw_scores}
+
+    # --- Edge case 1b: Insufficient information in source ---
+    # A source was provided, but the model admitted it couldn't answer from
+    # it. This is kept as its own distinct tag rather than Certain, Needs
+    # Verification, or Uncertain — the model didn't get anything wrong, and
+    # there's nothing here to "verify" or suspect as a hallucination; the
+    # source simply didn't have the answer.
+    if _is_refusal(answer_text):
+        tag = INSUFFICIENT_INFO
+        reason_key = "insufficient_info"
         return {"tag": tag, "rationale": _rationale(tag, reason_key), "raw_scores": raw_scores}
 
     # --- Edge case 2: Overconfident hallucination guard ---
