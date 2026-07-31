@@ -21,7 +21,7 @@ PROVIDER_GEMINI = "gemini"
 
 DEFAULT_PROVIDER = PROVIDER_GROQ
 DEFAULT_GROQ_MODEL = "llama-3.3-70b-versatile"
-DEFAULT_GEMINI_MODEL = "gemini-1.5-flash"
+DEFAULT_GEMINI_MODEL = "gemini-3.5-flash-lite"  # gemini-1.5-flash was retired
 
 MAX_RETRIES = 3
 RETRY_BACKOFF_SECONDS = 2
@@ -46,7 +46,14 @@ def _build_prompt(question: str, source_snippet: str = None) -> str:
             f"Using only the following source snippet, answer the question. "
             f"Do not use outside knowledge.\n\n"
             f"Source: {source_snippet.strip()}\n\n"
-            f"Question: {question.strip()}"
+            f"Question: {question.strip()}\n\n"
+            f"Answer with a direct factual statement only. Do NOT preface it "
+            f"with phrases like 'According to the source,' 'The source says,' "
+            f"or 'Based on the text.' Just state the answer plainly, as if it "
+            f"were a fact — this matters for downstream automated scoring, "
+            f"since meta-commentary framing (rather than a plain statement) "
+            f"can be misread as an unconfirmed or hedged claim even when the "
+            f"answer itself is fully correct."
         )
     else:
         return f"Question: {question.strip()}"
