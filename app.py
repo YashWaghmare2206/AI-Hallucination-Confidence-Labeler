@@ -62,24 +62,56 @@ selected_label = st.sidebar.selectbox("Load a prepared example", ["(none)"] + ge
 st.title("🔍 AI Hallucination Confidence Labeler")
 st.caption("Fuses perplexity + NLI groundedness into a Certain / Needs Verification / Uncertain tag.")
 
-default_source = ""
-default_question = ""
+# --- Explicit session_state keys so fields never silently keep stale text ---
+# Streamlit text widgets keep whatever you last typed across reruns, and
+# ignore `value=` after the first render. Without this block, switching
+# demo examples or clearing one field (but not another) causes a NEW
+# question to silently run against an OLD source snippet / forced answer.
+for _key, _default in [
+    ("source_snippet_input", ""),
+    ("question_input", ""),
+    ("manual_override_input", ""),
+    ("_last_selected_label", "(none)"),
+]:
+    if _key not in st.session_state:
+        st.session_state[_key] = _default
 
-if selected_label != "(none)":
-    example = get_example_by_label(selected_label)
-    default_source = example["source_snippet"]
-    default_question = example["question"]
+# If the demo dropdown selection just changed, force-sync the fields to
+# match the new example (or clear them if "(none)" was picked) BEFORE the
+# widgets are created below — this is what actually makes switching demos
+# reliable instead of leaving old text behind.
+if selected_label != st.session_state["_last_selected_label"]:
+    if selected_label != "(none)":
+        example = get_example_by_label(selected_label)
+        st.session_state["source_snippet_input"] = example["source_snippet"]
+        st.session_state["question_input"] = example["question"]
+    else:
+        st.session_state["source_snippet_input"] = ""
+        st.session_state["question_input"] = ""
+    st.session_state["manual_override_input"] = ""  # always clear override on demo switch
+    st.session_state["_last_selected_label"] = selected_label
 
-source_snippet = st.text_area("Source Snippet (optional)", value=default_source, height=120)
-question = st.text_input("Question", value=default_question)
+col_clear, _ = st.columns([1, 5])
+with col_clear:
+    if st.button("🔄 Clear form"):
+        st.session_state["source_snippet_input"] = ""
+        st.session_state["question_input"] = ""
+        st.session_state["manual_override_input"] = ""
+        st.session_state["_last_selected_label"] = "(none)"
+        st.rerun()
+
+source_snippet = st.text_area("Source Snippet (optional)", key="source_snippet_input", height=120)
+question = st.text_input("Question", key="question_input")
 
 with st.expander("🧪 Testing tools (optional)"):
     manual_answer_override = st.text_area(
         "Force a specific answer instead of generating one",
-        value="",
+        key="manual_override_input",
         placeholder="e.g. type a deliberately wrong answer here to stress-test the contradiction guard",
         height=80,
     )
+    if manual_answer_override.strip():
+        st.warning("⚠️ Override is ACTIVE — the LLM will NOT be called until you clear this box or click 'Clear form'.")
     st.caption(
         "Leave blank to let the LLM generate the answer normally. "
         "Fill this in to test how the pipeline scores a *specific* answer "
@@ -103,16 +135,19 @@ if generate_clicked:
     has_source = bool(source_snippet and source_snippet.strip())
 
     # Step 1: Generate answer (Member 2)
+    answer_source = "llm"  # "llm" | "manual_override" | "demo_override"
     with st.spinner("Generating answer..."):
         try:
             if manual_answer_override and manual_answer_override.strip():
                 # Testing tool: user forced a specific answer — skip the LLM entirely
                 answer = manual_answer_override.strip()
+                answer_source = "manual_override"
             else:
                 example = get_example_by_label(selected_label) if selected_label != "(none)" else None
                 if example and "answer_override" in example:
                     # Demo case with a pre-baked contradictory answer for reliable demoing
                     answer = example["answer_override"]
+                    answer_source = "demo_override"
                 else:
                     gen_result = generate_answer(
                         question=question,
@@ -126,6 +161,10 @@ if generate_clicked:
             st.stop()
 
     st.markdown("### 📝 Generated Answer")
+    if answer_source == "manual_override":
+        st.warning("⚠️ Using your manually forced answer — the LLM was NOT called.")
+    elif answer_source == "demo_override":
+        st.info("ℹ️ Using this demo example's pre-baked answer — the LLM was NOT called.")
     st.markdown(f"> {answer}")
 
     # Step 2: Perplexity (Member 1)
