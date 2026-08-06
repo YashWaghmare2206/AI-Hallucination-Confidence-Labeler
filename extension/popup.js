@@ -15,6 +15,12 @@ $("question").addEventListener("input", () => {
 $("source").addEventListener("input", () => {
     chrome.storage.local.set({ draftSource: $("source").value });
 });
+$("apiKey").addEventListener("input", () => {
+    chrome.storage.local.set({ apiKey: $("apiKey").value });
+});
+$("provider").addEventListener("change", () => {
+    chrome.storage.local.set({ provider: $("provider").value });
+});
 
 chrome.storage.local.get(["pendingPick"], (data) => {
     if (!data.pendingPick) return;
