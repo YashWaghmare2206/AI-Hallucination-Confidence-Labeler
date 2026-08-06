@@ -1,0 +1,50 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8" />
+  <title>Hallucination Labeler</title>
+  <link rel="stylesheet" href="popup.css" />
+</head>
+<body>
+  <h1>🔍 Hallucination Labeler</h1>
+
+  <label for="question">Question</label>
+  <textarea id="question" rows="2" placeholder="What do you want to ask?"></textarea>
+  <button id="pickQuestion" class="secondary">🎯 Pick from page</button>
+
+  <label for="source">Source snippet (optional)</label>
+  <textarea id="source" rows="3" placeholder="Paste or pick from the page"></textarea>
+  <button id="pickSource" class="secondary">🎯 Pick from page</button>
+
+  <label class="checkbox-row">
+    <input type="checkbox" id="showOnPage" checked />
+    Also show result on the page (next to selected text)
+  </label>
+
+  <label for="provider">Provider</label>
+  <select id="provider">
+    <option value="groq">Groq (Llama 3)</option>
+    <option value="gemini">Gemini</option>
+  </select>
+
+  <label for="apiKey">API Key</label>
+  <input id="apiKey" type="password" placeholder="Leave blank to use server .env" />
+
+  <button id="analyze" class="primary">Generate and Verify</button>
+
+  <div id="status"></div>
+
+  <div id="result" class="hidden">
+    <div id="tag" class="tag"></div>
+    <p id="answer"></p>
+    <div class="metrics">
+      <span id="perplexity"></span>
+      <span id="entailment"></span>
+      <span id="contradiction"></span>
+    </div>
+    <p id="rationale" class="rationale"></p>
+  </div>
+
+  <script src="popup.js"></script>
+</body>
+</html>

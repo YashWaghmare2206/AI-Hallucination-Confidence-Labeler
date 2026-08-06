@@ -1,0 +1,86 @@
+/* content.css — styles for the badge content.js injects directly into the
+   webpage (as opposed to popup.css, which styles the extension popup). */
+
+.ahcl-badge {
+    display: inline-block;
+    font-family: -apple-system, "Segoe UI", sans-serif;
+    font-size: 12px;
+    font-weight: 600;
+    padding: 4px 8px;
+    margin: 4px 4px;
+    border-radius: 6px;
+    cursor: default;
+    position: relative;
+    z-index: 999999;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.15);
+}
+
+.ahcl-badge.ahcl-certain { background: #dcfce7; color: #166534; }
+.ahcl-badge.ahcl-needs-verification { background: #fef9c3; color: #854d0e; }
+.ahcl-badge.ahcl-uncertain { background: #fee2e2; color: #991b1b; }
+
+.ahcl-badge .ahcl-close {
+    margin-left: 6px;
+    cursor: pointer;
+    opacity: 0.6;
+    font-weight: 400;
+}
+.ahcl-badge .ahcl-close:hover { opacity: 1; }
+
+.ahcl-badge .ahcl-detail {
+    display: none;
+    position: absolute;
+    top: 120%;
+    left: 0;
+    width: 240px;
+    background: white;
+    color: #333;
+    font-weight: 400;
+    font-size: 11px;
+    padding: 8px;
+    border-radius: 6px;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
+    white-space: normal;
+}
+.ahcl-badge:hover .ahcl-detail { display: block; }
+
+.ahcl-badge.ahcl-floating {
+    position: fixed;
+    bottom: 16px;
+    right: 16px;
+}
+
+/* --- Pick mode (drag-select text on the page to fill a popup field) --- */
+body.ahcl-picking, body.ahcl-picking * {
+    cursor: crosshair !important;
+}
+
+#ahcl-pick-hint {
+    position: fixed;
+    top: 12px;
+    left: 50%;
+    transform: translateX(-50%);
+    background: #111827;
+    color: white;
+    font-family: -apple-system, "Segoe UI", sans-serif;
+    font-size: 12px;
+    padding: 6px 12px;
+    border-radius: 6px;
+    z-index: 1000000;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
+}
+
+#ahcl-pick-toast {
+    position: fixed;
+    bottom: 16px;
+    left: 50%;
+    transform: translateX(-50%);
+    background: #166534;
+    color: white;
+    font-family: -apple-system, "Segoe UI", sans-serif;
+    font-size: 12px;
+    padding: 6px 12px;
+    border-radius: 6px;
+    z-index: 1000000;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
+}
