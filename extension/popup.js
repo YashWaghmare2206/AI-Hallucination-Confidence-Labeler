@@ -2,21 +2,31 @@ const API_URL = "http://127.0.0.1:5000/analyze";
 
 const $ = (id) => document.getElementById(id);
 
-// Restore last-used API key from local storage so the user doesn't retype
-// it every time (stored locally in the browser only, never synced).
-chrome.storage.local.get(["apiKey", "provider"], (data) => {
+chrome.storage.local.get(["apiKey", "provider", "draftQuestion", "draftSource"], (data) => {
     if (data.apiKey) $("apiKey").value = data.apiKey;
     if (data.provider) $("provider").value = data.provider;
+    if (data.draftQuestion) $("question").value = data.draftQuestion;
+    if (data.draftSource) $("source").value = data.draftSource;
 });
 
-// If a pick was made on the page while the popup was closed (unavoidable —
-// Chrome closes the popup the moment you click outside it), fill in
-// whichever field it was meant for and clear it so it doesn't reapply.
+$("question").addEventListener("input", () => {
+    chrome.storage.local.set({ draftQuestion: $("question").value });
+});
+$("source").addEventListener("input", () => {
+    chrome.storage.local.set({ draftSource: $("source").value });
+});
+
 chrome.storage.local.get(["pendingPick"], (data) => {
     if (!data.pendingPick) return;
     const { target, text } = data.pendingPick;
-    if (target === "question") $("question").value = text;
-    if (target === "source") $("source").value = text;
+    if (target === "question") {
+        $("question").value = text;
+        chrome.storage.local.set({ draftQuestion: text });
+    }
+    if (target === "source") {
+        $("source").value = text;
+        chrome.storage.local.set({ draftSource: text });
+    }
     chrome.storage.local.remove("pendingPick");
     setStatus(`Filled ${target} from your page selection.`);
 });
@@ -29,10 +39,6 @@ async function startPicking(target) {
         return;
     }
 
-    // Wait for the message to actually be sent/acknowledged before closing the
-    // popup. Calling window.close() immediately after sendMessage (without
-    // waiting) can tear down the popup's JS context before the message leaves,
-    // so the content script never gets it.
     let hadError = false;
     await new Promise((resolve) => {
         chrome.tabs.sendMessage(tab.id, { type: "START_PICKING", target }, () => {
@@ -82,12 +88,11 @@ $("analyze").addEventListener("click", async () => {
         const data = await res.json();
         renderResult(data);
         setStatus("");
+        chrome.storage.local.remove(["draftQuestion", "draftSource"]);
 
         if ($("showOnPage").checked) {
             const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
             chrome.tabs.sendMessage(tab.id, { type: "SHOW_RESULT_ON_PAGE", data }, () => {
-                // Ignore errors here (e.g. on chrome:// pages content scripts can't
-                // run) — the popup result is still shown either way.
                 void chrome.runtime.lastError;
             });
         }
