@@ -78,6 +78,7 @@ deeper, claim-by-claim verification pass as a secondary opinion.
 - 🔌 **Provider-agnostic** — works with Groq (Llama 3) or Google Gemini for answer generation.
 - 🧪 **Fully tested core logic** — the decision engine is covered by unit tests for every branch of the routing table, including edge cases.
 - 🖥️ **One-click Streamlit demo** — prepared example cases for Certain, Needs Verification, contradiction, and no-source scenarios.
+- 🧩 **Chrome extension frontend** — run the same pipeline from a browser popup, with a point-and-drag "pick from page" tool and results injected as badges right next to the text they're judging.
 
 ## 🛠️ Tech Stack
 
@@ -88,7 +89,7 @@ deeper, claim-by-claim verification pass as a secondary opinion.
 | Groundedness | `cross-encoder/nli-deberta-v3-small` (SentenceTransformers) |
 | Self-consistency | Custom SelfCheckGPT-style resampling + NLI |
 | Secondary judge | DeepEval `HallucinationMetric` (Gemini-backed) |
-| Interface | Streamlit |
+| Interface | Streamlit, and a Chrome extension (Manifest V3) backed by a local Flask API |
 
 ## 🚀 Getting Started
 
@@ -129,6 +130,45 @@ pytest tests/ -v
 ```
 All tests use mocked API responses — no real keys required to test the logic.
 
+## 🧩 Chrome Extension
+
+A Chrome extension frontend is included in `extension/`, backed by a local
+Flask server (`backend/api.py`) that reuses the exact same pipeline as the
+Streamlit app — the ML models still run in Python; the extension is just a
+thin client that calls `http://127.0.0.1:5000/analyze`.
+
+```bash
+# 1. Start the local backend (from the project root, in its own terminal)
+pip install -r requirements.txt
+python backend/api.py        # runs on http://127.0.0.1:5000 — keep this running
+
+# 2. Load the extension
+# chrome://extensions → enable "Developer mode" → "Load unpacked"
+# → select the extension/ folder
+```
+
+**How to use it:**
+1. Click the extension icon in the toolbar.
+2. Type a question directly, or click **"🎯 Pick from page"** next to
+   Question or Source — the popup closes, the page cursor becomes a
+   crosshair, and you drag-select any text on the page. A toast confirms
+   the pick; reopen the extension and the field is filled in.
+   (Chrome always closes extension popups on an outside click, so this
+   pick → reopen flow is the standard workaround, not a bug.)
+3. Click **"Generate and Verify."**
+4. With **"Also show result on the page"** checked (on by default), the
+   tag also gets injected as a small colored badge right next to the text
+   you picked — hover it for the rationale, click ✕ to dismiss.
+
+**Notes:**
+- The backend binds to `127.0.0.1` only (not `0.0.0.0`), so it's reachable
+  only from your own machine — a dev-mode setup, not a hosted/shared server.
+- After reloading the extension in `chrome://extensions`, refresh any
+  already-open tabs — content scripts only attach to pages loaded *after*
+  a reload.
+- Picking only works on normal `http(s)` pages, not on `chrome://` pages,
+  the Chrome Web Store, or PDF viewers.
+
 ## 📁 Project Structure
 
 ```
@@ -144,6 +184,14 @@ AI_Hallucination_Connector/
 │   └── selfcheck.py
 ├── demo/                   # Prepared demo examples
 ├── tests/                  # Unit + mocked integration tests
+├── backend/
+│   └── api.py               # Flask API wrapping the pipeline for the extension
+├── extension/                # Chrome extension (Manifest V3) frontend
+│   ├── manifest.json
+│   ├── popup.html / popup.js / popup.css
+│   ├── content.js            # pick-from-page tool + on-page result badges
+│   ├── content.css           # styling for the picker cursor, hint, toast, badges
+│   └── icons/
 ├── requirements.txt
 └── .env.example
 ```
@@ -154,6 +202,7 @@ AI_Hallucination_Connector/
 - [ ] Swap in larger/heavier NLI models as an accuracy vs. latency toggle
 - [ ] Confidence calibration against a labeled benchmark (e.g. TruthfulQA)
 - [ ] Multi-document source support (currently single snippet)
+- [ ] Publish the Chrome extension to the Web Store (currently dev-mode / unpacked only)
 
 ## 👥 Team
 
@@ -163,7 +212,7 @@ Built as a 3-person hackathon prototype:
 |---|---|
 | **Backend Logic & Metrics** | Perplexity scoring, NLI groundedness, the tri-state decision engine |
 | **LLM Integration & Verification** | Answer generation pipeline, DeepEval judge, SelfCheckGPT |
-| **UI/UX & Integration** | Streamlit interface, caching, demo readiness |
+| **UI/UX & Integration** | Streamlit interface, caching, demo readiness, Chrome extension |
 
 ## 📄 License
 
