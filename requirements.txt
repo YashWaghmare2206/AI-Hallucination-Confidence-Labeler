@@ -15,8 +15,9 @@ deepeval>=1.0.0
 # Frontend
 streamlit>=1.36.0
 
-# Claude Code connector
-mcp>=1.0.0
+# Chrome extension backend
+flask>=3.0.0
+flask-cors>=4.0.0
 
 # Utilities
 python-dotenv>=1.0.1
